@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fraud-detection-mlops"
+version = "0.1.0"
+description = "MLOps pipeline: Fraud Detection with MLflow, FastAPI, Docker, GitHub Actions, Evidently"
+requires-python = ">=3.10"
+dependencies = [
+    "scikit-learn>=1.4",
+    "imbalanced-learn>=0.12",
+    "mlflow>=2.12",
+    "pandas>=2.2",
+    "numpy>=1.26",
+    "shap>=0.45",
+    "python-dotenv>=1.0",
+    "kaggle>=1.6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-cov>=5",
+    "ruff>=0.4",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=src --cov-report=term-missing -v"
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]

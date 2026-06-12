@@ -1,0 +1,50 @@
+# data/raw/ — Kaggle dataset (gitignored)
+data/raw/
+data/raw/*.csv
+
+# MLflow tracking database and artifacts (local dev)
+mlruns/
+mlruns.db
+
+# SQLite prediction log
+logs/predictions.db
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment files
+.env
+*.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/settings.json
+.idea/
+
+# Test / coverage artefacts
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# SHAP / report outputs (generated, not committed)
+reports/shap_summary.png
+reports/drift_reports/*.html
+reports/preprocessor.pkl
+reports/*.pkl
