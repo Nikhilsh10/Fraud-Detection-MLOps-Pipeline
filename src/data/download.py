@@ -40,7 +40,18 @@ EXPECTED_COLUMNS = {
 
 
 def _check_kaggle_credentials() -> None:
-    """Fail fast if Kaggle credentials are missing."""
+    """Fail fast if Kaggle credentials are missing.
+
+    Accepts credentials from either:
+      1. A kaggle.json file at the standard path (~/.config/kaggle/kaggle.json)
+         Written by CI from the KAGGLE_JSON secret.
+      2. KAGGLE_USERNAME + KAGGLE_KEY environment variables (local dev / .env).
+    """
+    kaggle_json = Path.home() / ".config" / "kaggle" / "kaggle.json"
+    if kaggle_json.exists():
+        logger.info("Kaggle credentials found via kaggle.json at %s", kaggle_json)
+        return
+
     username = os.getenv("KAGGLE_USERNAME")
     key = os.getenv("KAGGLE_KEY")
     if not username or not key:
