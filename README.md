@@ -32,22 +32,22 @@ experiment tracking → serving → CI/CD → drift detection → automated retr
 
 ## Experiment Results
 
-| # | n_estimators | max_depth | class_weight | SMOTE | roc_auc | avg_precision | f1 | MLflow ver | run_id (short) |
-|---|---|---|---|---|---|---|---|---|---|
-| 1 | 100 | None | balanced | ✅ | 1.0000 | 1.0000 | 0.9630 | v1 | `76e8fb1` |
-| 2 | 200 | None | balanced | ✅ | 1.0000 | 1.0000 | 0.9630 | v2 | `3a0e90b` |
-| 3 | 100 | 10 | balanced | ✅ | 1.0000 | 1.0000 | 0.9630 | v3 | `e2c6053` |
+| # | n_estimators | max_depth | class_weight | SMOTE | roc_auc | avg_precision | f1 | Data | MLflow ver | run_id (short) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | 100 | None | balanced | ✅ | 1.0000 | 1.0000 | 0.9630 | synthetic | v1 | `76e8fb1` |
+| 2 | 200 | None | balanced | ✅ | 1.0000 | 1.0000 | 0.9630 | synthetic | v2 | `3a0e90b` |
+| 3 | 100 | 10 | balanced | ✅ | 1.0000 | 1.0000 | 0.9630 | synthetic | v3 | `e2c6053` |
+| 4 | 100 | None | balanced | ✅ | 0.9988 | **0.8296** | 0.8571 | **real Kaggle** | v4 | `avg_prec=0.83` |
 
-> **Note**: All experiments run on a 50k-row synthetic dataset (Kaggle dataset not yet downloaded).
-> Perfect scores (AUC=1.0) reflect the synthetic data's clean separability on V4/V11/V12 features.
-> Real Kaggle data will produce realistic scores (~0.97 AUC, ~0.85 Avg Precision).
-> Goal is to verify the MLflow logging loop — scores are not meaningful until real data is used.
+> **Note**: Runs 1–3 were on a 50k-row synthetic dataset (used to validate the MLflow logging loop).
+> Run 4 uses the full 284,807-row Kaggle dataset — `avg_precision 0.83` is the production metric.
 
 ## Drift Threshold Justification
 
-We use a **DataDriftPreset** via Evidently with a default drift share threshold of `0.25` (25%).
+We use a **DataDriftPreset** via Evidently with a drift share threshold of `0.25` (25%).
 - **Why 25%?** The dataset contains 30 features (Time, Amount, V1-V28). A drift share of 0.25 means at least 7-8 features have significantly shifted in their statistical distributions (using default statistical tests like Kolmogorov-Smirnov).
 - Fraud detection models are highly sensitive to shifts in the PCA-transformed `V` features. If >25% of features drift, the underlying transaction behavior has fundamentally changed, strongly indicating that the model's learned decision boundaries may no longer be reliable and a retrain is required.
+- **Verified end-to-end**: drift detected locally (share=0.50) → `repository_dispatch` → GitHub Actions ML Pipeline → model retrained with `trigger=drift_retrain, drift_score=0.5` logged as MLflow tags (runs #10, #12).
 
 ## Quickstart
 
