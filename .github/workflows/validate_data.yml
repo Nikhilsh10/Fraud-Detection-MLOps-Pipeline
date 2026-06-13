@@ -24,6 +24,9 @@ jobs:
           pip install -e .[dev]
 
       - name: Download Data
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
         run: |
           python -m src.data.download
           
