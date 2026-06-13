@@ -1,0 +1,72 @@
+# ---------------------------------------------------------------------------
+# Fraud Detection MLOps Pipeline — docker-compose
+# ---------------------------------------------------------------------------
+# Services:
+#   api      — FastAPI serving container (fraud_detector Production model)
+#   mlflow   — MLflow UI (read-only, shares mlruns.db)
+#
+# Usage:
+#   docker-compose up --build          # start both services
+#   docker-compose up api              # only the API
+#   docker-compose down                # stop + remove containers
+#
+# Volumes:
+#   mlruns/     — MLflow artifact store (read by api at startup for model load)
+#   mlruns.db   — SQLite MLflow tracking DB (read/write)
+#   predictions.db — SQLite predictions log (written by api)
+#   reports/    — drift reports (written by Phase-4 monitoring)
+# ---------------------------------------------------------------------------
+
+version: "3.9"
+
+services:
+
+  # ── Fraud Detection API ──────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    image: fraud-api:latest
+    container_name: fraud_api
+    ports:
+      - "8000:8000"
+    environment:
+      MLFLOW_TRACKING_URI: sqlite:///mlruns.db
+      PREDICTIONS_DB_PATH: /app/predictions.db
+      DRIFT_LOG_PATH: /app/reports/drift_log.jsonl
+    volumes:
+      # MLflow artifact store (model files)
+      - ./mlruns:/app/mlruns
+      # MLflow SQLite tracking DB
+      - ./mlruns.db:/app/mlruns.db
+      # Predictions log — persist between container restarts
+      - ./predictions.db:/app/predictions.db
+      # Drift reports from Phase-4 monitoring
+      - ./reports:/app/reports
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request, sys; r = urllib.request.urlopen('http://localhost:8000/health', timeout=4); sys.exit(0 if r.status == 200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      start_period: 45s
+      retries: 3
+    restart: unless-stopped
+
+  # ── MLflow UI (optional, read-only) ─────────────────────────────────────
+  mlflow:
+    image: python:3.11-slim
+    container_name: mlflow_ui
+    command: >
+      sh -c "pip install -q mlflow && mlflow ui
+             --backend-store-uri sqlite:///mlruns.db
+             --host 0.0.0.0 --port 5000"
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./mlruns:/mlruns
+      - ./mlruns.db:/mlruns.db
+    working_dir: /
+    restart: unless-stopped
+    profiles:
+      - full   # opt-in: docker-compose --profile full up

@@ -48,3 +48,8 @@ reports/shap_summary.png
 reports/drift_reports/*.html
 reports/preprocessor.pkl
 reports/*.pkl
+
+predictions.db
+archive/
+*.txt
+fix_db.py
