@@ -52,4 +52,4 @@ jobs:
         with:
           context: .
           push: true
-          tags: ghcr.io/${{ github.repository }}/fraud-api:latest
+          tags: ghcr.io/${{ github.repository | lower }}/fraud-api:latest
