@@ -37,7 +37,12 @@ jobs:
           
       - name: Train and Register Model
         run: |
-          python -m src.training.train
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            DRIFT_SCORE="${{ github.event.client_payload.drift_share }}"
+            python -m src.training.train --trigger drift_retrain --drift-score "$DRIFT_SCORE"
+          else
+            python -m src.training.train
+          fi
           python scripts/promote_model.py
           
       - name: Log in to GitHub Container Registry
