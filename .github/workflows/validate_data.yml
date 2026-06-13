@@ -25,9 +25,11 @@ jobs:
 
       - name: Download Data
         env:
-          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
-          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+          KAGGLE_JSON: ${{ secrets.KAGGLE_JSON }}
         run: |
+          mkdir -p ~/.config/kaggle
+          echo "$KAGGLE_JSON" > ~/.config/kaggle/kaggle.json
+          chmod 600 ~/.config/kaggle/kaggle.json
           python -m src.data.download
           
       - name: Run Data Validation
