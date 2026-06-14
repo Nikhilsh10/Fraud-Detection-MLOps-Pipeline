@@ -12,7 +12,7 @@ experiment tracking → serving → CI/CD → drift detection → automated retr
 └──────────────┬─────────────────────────┬────────────────────────┘
                │                         │ repository_dispatch
                ▼                         ▼
-        ┌─────────────┐          ┌──────────────────┐
+        ┌─────────────┐          ┌──────────────────┐ 
         │   MLflow    │          │  Evidently Drift  │
         │  Registry   │◄─────────│  Report Engine    │
         │ fraud_detector│        └──────────────────┘
