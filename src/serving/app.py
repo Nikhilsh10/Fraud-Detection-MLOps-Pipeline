@@ -65,9 +65,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s — %(message)s")
 # Configuration
 # ---------------------------------------------------------------------------
 
-MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "sqlite:///mlruns.db")
 REGISTRY_MODEL_NAME = "fraud_detector"
-REGISTRY_ALIAS = "Production"
 DRIFT_LOG_PATH = Path(os.getenv("DRIFT_LOG_PATH", "reports/drift_log.jsonl"))
 
 # Feature column order — must match ColumnTransformer in engineer.py
@@ -98,33 +96,39 @@ _state = _ModelState()
 async def lifespan(app: FastAPI):
     """Load model + preprocessor once at startup; nothing to teardown."""
     _state.start_time = time.monotonic()
-    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-    client = mlflow.MlflowClient()
+
+    logger.info("Fetching production model pointer from S3...")
+    
+    # Download pointer file from S3
+    import boto3
+    s3 = boto3.client("s3")
+    s3_bucket = "nikhilsh10-fraud-mlflow-artifacts"
+    try:
+        response = s3.get_object(Bucket=s3_bucket, Key="production_model.json")
+        pointer = json.loads(response["Body"].read().decode('utf-8'))
+    except Exception as e:
+        logger.error("Failed to fetch production_model.json from S3: %s", e)
+        raise
+
+    _state.model_version = str(pointer.get("version", "unknown"))
+    s3_model_uri = pointer["s3_model_uri"]
+    s3_preprocessor_uri = pointer["s3_preprocessor_uri"]
 
     logger.info(
-        "Loading model '%s' @ alias '%s' from %s …",
-        REGISTRY_MODEL_NAME, REGISTRY_ALIAS, MLFLOW_TRACKING_URI,
+        "Production model pointer fetched → version=%s  run_id=%s", 
+        _state.model_version, pointer.get("run_id", "unknown")[:8]
     )
 
-    # Resolve alias to get version metadata
-    mv = client.get_model_version_by_alias(REGISTRY_MODEL_NAME, REGISTRY_ALIAS)
-    _state.model_version = str(mv.version)   # MLflow returns int; schema expects str
-    run_id = mv.run_id
-    logger.info(
-        "Production model → version=%s  run_id=%s", mv.version, run_id[:8]
-    )
+    # Load pyfunc model directly from S3 URI
+    logger.info("Loading model from %s", s3_model_uri)
+    _state.pyfunc_model = mlflow.pyfunc.load_model(s3_model_uri)
+    logger.info("Model loaded successfully.")
 
-    # Load pyfunc model (sklearn flavour: wraps RF in _SklearnModelWrapper)
-    model_uri = f"models:/{REGISTRY_MODEL_NAME}@{REGISTRY_ALIAS}"
-    _state.pyfunc_model = mlflow.pyfunc.load_model(model_uri)
-    logger.info("Model loaded: %s", model_uri)
-
-    # Download preprocessor.pkl from the same MLflow run's artifacts
+    # Download preprocessor.pkl from S3 URI via mlflow artifact downloader
+    logger.info("Downloading preprocessor from %s", s3_preprocessor_uri)
     local_prep_path = Path(
         mlflow.artifacts.download_artifacts(
-            run_id=run_id,
-            artifact_path="preprocessor/preprocessor.pkl",
-            tracking_uri=MLFLOW_TRACKING_URI,
+            artifact_uri=s3_preprocessor_uri,
         )
     )
     with open(local_prep_path, "rb") as fh:
