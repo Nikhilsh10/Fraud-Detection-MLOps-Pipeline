@@ -52,7 +52,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s — %(message)s")
 # ---------------------------------------------------------------------------
 
 REGISTRY_MODEL_NAME = "fraud_detector"
-DEFAULT_EXPERIMENT_NAME = "fraud_detector_experiments"
+DEFAULT_EXPERIMENT_NAME = "fraud_detector_aws"
 DATA_CSV = "data/raw/creditcard.csv"
 REPORTS_DIR = Path("reports")
 MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "sqlite:///mlruns.db")
@@ -150,6 +150,13 @@ def train(
     # Setup MLflow
     # ------------------------------------------------------------------
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+    experiment = mlflow.get_experiment_by_name(experiment_name)
+    if experiment is None:
+        s3_bucket = os.getenv("MLFLOW_S3_ARTIFACT_ROOT", "s3://nikhilsh10-fraud-mlflow-artifacts")
+        mlflow.create_experiment(
+            experiment_name,
+            artifact_location=s3_bucket,
+        )
     mlflow.set_experiment(experiment_name)
 
     # ------------------------------------------------------------------
