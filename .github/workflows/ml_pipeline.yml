@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - test-ecr-push
   repository_dispatch:
     types: [retrain-model]
 
