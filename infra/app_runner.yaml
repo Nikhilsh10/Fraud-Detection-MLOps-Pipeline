@@ -1,0 +1,83 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AWS App Runner deployment for the Fraud Detection MLOps Pipeline API
+
+Parameters:
+  EcrRepositoryName:
+    Type: String
+    Default: fraud-detection
+    Description: The name of the ECR repository containing the image.
+  ImageTag:
+    Type: String
+    Default: latest
+    Description: The tag of the image to deploy.
+  S3BucketName:
+    Type: String
+    Default: nikhilsh10-fraud-mlflow-artifacts
+    Description: The name of the S3 bucket where production_model.json is stored.
+
+Resources:
+  # 1. ECR Access Role (Allows App Runner to pull images from ECR)
+  AppRunnerEcrAccessRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: build.apprunner.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess
+
+  # 2. Instance Role (Allows the running container to read from the specific S3 bucket)
+  AppRunnerInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: tasks.apprunner.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: S3ArtifactReadAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                # Strictly scoped to objects inside the bucket, NO wildcard broad access
+                Resource: !Sub 'arn:aws:s3:::${S3BucketName}/*'
+
+  # 3. The App Runner Service
+  FraudDetectionService:
+    Type: AWS::AppRunner::Service
+    Properties:
+      ServiceName: fraud-api-service
+      SourceConfiguration:
+        AuthenticationConfiguration:
+          AccessRoleArn: !GetAtt AppRunnerEcrAccessRole.Arn
+        AutoDeploymentsEnabled: true
+        ImageRepository:
+          ImageIdentifier: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${EcrRepositoryName}:${ImageTag}'
+          ImageRepositoryType: ECR
+          ImageConfiguration:
+            Port: '8000'
+            RuntimeEnvironmentVariables:
+              - Name: AWS_REGION
+                Value: !Ref AWS::Region
+      InstanceConfiguration:
+        InstanceRoleArn: !GetAtt AppRunnerInstanceRole.Arn
+        Cpu: '1 vCPU'
+        Memory: '2 GB'
+      HealthCheckConfiguration:
+        Protocol: HTTP
+        Path: /health
+
+Outputs:
+  ServiceUrl:
+    Description: The public URL of the deployed App Runner service
+    Value: !Sub 'https://${FraudDetectionService.ServiceUrl}'
