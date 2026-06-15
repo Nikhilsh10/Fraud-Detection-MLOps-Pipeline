@@ -26,6 +26,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e .[dev,serving]
+          pip install boto3
           
       - name: Download Data
         env:
