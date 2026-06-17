@@ -36,11 +36,17 @@ s3_artifact_uri = f"s3://{s3_bucket}/{s3_prefix}"
 print(f"Uploading artifacts from {local_artifact_uri} to {s3_artifact_uri}...")
 subprocess.run(["aws", "s3", "sync", local_artifact_uri, s3_artifact_uri], check=True)
 
+# MLflow Model Registry stores the model in mv.source, which might be outside the run's artifacts
+local_model_uri = mv.source.replace("file://", "")
+s3_model_uri = f"{s3_artifact_uri}/model"
+print(f"Uploading model from {local_model_uri} to {s3_model_uri}...")
+subprocess.run(["aws", "s3", "sync", local_model_uri, s3_model_uri], check=True)
+
 # Write pointer file
 pointer_data = {
     "run_id": mv.run_id,
     "version": mv.version,
-    "s3_model_uri": f"{s3_artifact_uri}/model",
+    "s3_model_uri": s3_model_uri,
     "s3_preprocessor_uri": f"{s3_artifact_uri}/preprocessor/preprocessor.pkl"
 }
 
