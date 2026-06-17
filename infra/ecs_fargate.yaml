@@ -1,52 +1,34 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Minimal ECS Fargate deployment for the Fraud Detection API
-
-Parameters:
-  EcrRepositoryName:
-    Type: String
-    Default: fraud-detection
-  ImageTag:
-    Type: String
-    Default: latest
-  S3BucketName:
-    Type: String
-    Default: nikhilsh10-fraud-mlflow-artifacts
+Description: ECS Fargate deployment for Fraud Detection API
 
 Resources:
-  # --- Networking ---
+
+  # VPC and networking
   VPC:
     Type: AWS::EC2::VPC
     Properties:
       CidrBlock: 10.0.0.0/16
-      EnableDnsSupport: true
       EnableDnsHostnames: true
+      EnableDnsSupport: true
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: ap-south-1a
+      MapPublicIpOnLaunch: true
 
   InternetGateway:
     Type: AWS::EC2::InternetGateway
-  
+
   VPCGatewayAttachment:
     Type: AWS::EC2::VPCGatewayAttachment
     Properties:
       VpcId: !Ref VPC
       InternetGatewayId: !Ref InternetGateway
 
-  PublicSubnet1:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref VPC
-      CidrBlock: 10.0.1.0/24
-      MapPublicIpOnLaunch: true
-      AvailabilityZone: !Select [0, !GetAZs '']
-
-  PublicSubnet2:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref VPC
-      CidrBlock: 10.0.2.0/24
-      MapPublicIpOnLaunch: true
-      AvailabilityZone: !Select [1, !GetAZs '']
-
-  PublicRouteTable:
+  RouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
       VpcId: !Ref VPC
@@ -55,35 +37,33 @@ Resources:
     Type: AWS::EC2::Route
     DependsOn: VPCGatewayAttachment
     Properties:
-      RouteTableId: !Ref PublicRouteTable
+      RouteTableId: !Ref RouteTable
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref InternetGateway
 
-  Subnet1RouteTableAssociation:
+  SubnetRouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
-      SubnetId: !Ref PublicSubnet1
-      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref RouteTable
 
-  Subnet2RouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref PublicSubnet2
-      RouteTableId: !Ref PublicRouteTable
-
-  ContainerSecurityGroup:
+  # Security group - only port 8000 inbound
+  SecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Allow port 8000 inbound
+      GroupDescription: Fraud API security group
       VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 8000
           ToPort: 8000
           CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
 
-  # --- IAM Roles ---
-  EcsExecutionRole:
+  # IAM role for ECS task to read from S3
+  TaskExecutionRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -95,8 +75,30 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: ECRPullPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                Resource: '*'
+        - PolicyName: CloudWatchLogsPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
 
-  EcsTaskRole:
+  TaskRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -107,67 +109,69 @@ Resources:
               Service: ecs-tasks.amazonaws.com
             Action: sts:AssumeRole
       Policies:
-        - PolicyName: S3ArtifactReadAccess
+        - PolicyName: S3ReadPolicy
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
               - Effect: Allow
-                Action: s3:GetObject
-                Resource: !Sub 'arn:aws:s3:::${S3BucketName}/*'
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - arn:aws:s3:::nikhilsh10-fraud-mlflow-artifacts
+                  - arn:aws:s3:::nikhilsh10-fraud-mlflow-artifacts/*
 
-  # --- ECS Cluster & Service ---
-  EcsCluster:
+  # ECS cluster
+  Cluster:
     Type: AWS::ECS::Cluster
     Properties:
       ClusterName: FraudApiCluster
 
-  LogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: /ecs/fraud-api
-      RetentionInDays: 7
-
+  # Task definition
   TaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
-      Family: fraud-api-task
-      Cpu: 256
-      Memory: 512
+      Family: fraud-api
+      Cpu: '512'
+      Memory: '1024'
       NetworkMode: awsvpc
-      RequiresCompatibilities:
-        - FARGATE
-      ExecutionRoleArn: !GetAtt EcsExecutionRole.Arn
-      TaskRoleArn: !GetAtt EcsTaskRole.Arn
+      RequiresCompatibilities: [FARGATE]
+      ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
       ContainerDefinitions:
-        - Name: fraud-api-container
-          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${EcrRepositoryName}:${ImageTag}'
+        - Name: fraud-api
+          Image: 475790160573.dkr.ecr.ap-south-1.amazonaws.com/fraud-detection:latest
           PortMappings:
             - ContainerPort: 8000
           Environment:
-            - Name: AWS_REGION
-              Value: !Ref AWS::Region
+            - Name: AWS_DEFAULT_REGION
+              Value: ap-south-1
+            - Name: S3_BUCKET
+              Value: nikhilsh10-fraud-mlflow-artifacts
           LogConfiguration:
             LogDriver: awslogs
             Options:
-              awslogs-group: !Ref LogGroup
-              awslogs-region: !Ref AWS::Region
+              awslogs-group: /ecs/fraud-api
+              awslogs-region: ap-south-1
               awslogs-stream-prefix: ecs
+              awslogs-create-group: 'true'
 
-  EcsService:
+  # ECS service
+  Service:
     Type: AWS::ECS::Service
-    DependsOn: PublicRoute
     Properties:
-      Cluster: !Ref EcsCluster
-      ServiceName: FraudApiService
-      TaskDefinition: !Ref TaskDefinition
-      DesiredCount: 1
+      Cluster: !Ref Cluster
       LaunchType: FARGATE
+      DesiredCount: 1
+      TaskDefinition: !Ref TaskDefinition
       NetworkConfiguration:
         AwsvpcConfiguration:
           AssignPublicIp: ENABLED
-          Subnets:
-            - !Ref PublicSubnet1
-            - !Ref PublicSubnet2
-          SecurityGroups:
-            - !Ref ContainerSecurityGroup
+          Subnets: [!Ref PublicSubnet]
+          SecurityGroups: [!Ref SecurityGroup]
 
+Outputs:
+  ClusterName:
+    Value: !Ref Cluster
+  ServiceName:
+    Value: !GetAtt Service.Name
