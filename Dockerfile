@@ -51,7 +51,8 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
         "python-dotenv>=1.0" \
         "fastapi>=0.111" \
         "uvicorn[standard]>=0.29" \
-        "pydantic>=2.7"
+        "pydantic>=2.7" \
+        "boto3>=1.34"
 
 
 # ── Stage 2: runtime ────────────────────────────────────────────────────────
