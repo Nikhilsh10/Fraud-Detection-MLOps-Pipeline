@@ -1,108 +1,114 @@
-# Fraud Detection MLOps Pipeline
+# 🛡️ End-to-End Fraud Detection MLOps Pipeline
 
-An end-to-end MLOps reference implementation demonstrating the full model lifecycle:
-experiment tracking → serving → CI/CD → drift detection → automated retraining.
+An enterprise-grade, end-to-end MLOps reference implementation demonstrating the complete machine learning lifecycle: data ingestion, experiment tracking, continuous integration/continuous training (CI/CD/CT), automated drift detection, and serverless AWS deployment.
 
-## Architecture
+## 🏗️ Architecture
 
-```text
-┌─────────────────────────────────────────────────────────────────┐
-│                        GitHub Actions                           │
-│  validate_data.yml → ml_pipeline.yml → drift_check.yml (cron)  │
-└──────────────┬─────────────────────────┬────────────────────────┘
-               │                         │ repository_dispatch
-               ▼                         ▼
-        ┌─────────────┐          ┌──────────────────┐ 
-        │   MLflow    │          │  Evidently Drift  │
-        │  Registry   │◄─────────│  Report Engine    │
-        │ fraud_detector│        └──────────────────┘
-        └──────┬──────┘
-               │ loads Production model
-               ▼
-        ┌─────────────┐
-        │  FastAPI +  │──► predictions_log (SQLite)
-        │   Docker    │
-        └─────────────┘
+```mermaid
+graph TD
+    A[Raw Data] -->|Preprocess & SMOTE| B(Training Pipeline)
+    B -->|Logs metrics/artifacts| C[MLflow Registry]
+    
+    C -->|Promote to Production| D[GitHub Actions CI/CD]
+    
+    subgraph AWS Cloud
+        D -->|Pushes Model & Pointer| E[(AWS S3 Bucket)]
+        D -->|Builds & Pushes Image| F[Amazon ECR]
+        E -.->|Pulls Artifacts| G
+        F -.->|Pulls Image| G
+        G[AWS ECS Fargate\nFastAPI Server] -->|Serves Predictions| H((Client Application))
+    end
+    
+    H -->|Production Data| I[Evidently AI\nDrift Monitor]
+    I -->|> 25% Drift Detected| J[repository_dispatch]
+    J -->|Triggers Retrain| D
 ```
 
-## Dataset
+## ✨ Key Features
 
-[Kaggle Credit Card Fraud Detection](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud)
-— 284,807 transactions, 492 frauds (0.172% positive class).
+- **Data Preprocessing & Balancing**: Handled severe class imbalance (0.17% fraud) on a 284k+ row dataset using Synthetic Minority Oversampling Technique (SMOTE).
+- **Experiment Tracking**: Integrated **MLflow** for hyperparameter tracking, metric logging, and model registry.
+- **Explainable AI (XAI)**: Automated generation and logging of **SHAP** summary plots for model transparency and feature importance analysis.
+- **CI/CD/CT Pipeline**: Robust **GitHub Actions** workflows for automated testing, Docker image building, AWS pushing, and continuous training.
+- **Serverless Cloud Deployment**: Fully automated Infrastructure-as-Code (IaC) via **AWS CloudFormation**. Deploys the FastAPI application to **AWS ECS Fargate**, utilizing an S3 pointer architecture to securely load version-controlled artifacts dynamically at runtime.
+- **Least-Privilege Security**: Custom AWS IAM Roles ensuring the ECS tasks only have exact permissions to read from the specific S3 bucket and pull from ECR.
+- **Automated Drift Detection**: **Evidently AI** monitors production data for statistical drift. Automatically triggers a GitHub Actions webhook to retrain the model if >25% of features drift.
 
-## Experiment Results
+## 🛠️ Tech Stack
 
-| # | n_estimators | max_depth | class_weight | SMOTE | roc_auc | avg_precision | f1 | Data | MLflow ver | run_id (short) |
-|---|---|---|---|---|---|---|---|---|---|---|
-| 1 | 100 | None | balanced | ✅ | 1.0000 | 1.0000 | 0.9630 | synthetic | v1 | `76e8fb1` |
-| 2 | 200 | None | balanced | ✅ | 1.0000 | 1.0000 | 0.9630 | synthetic | v2 | `3a0e90b` |
-| 3 | 100 | 10 | balanced | ✅ | 1.0000 | 1.0000 | 0.9630 | synthetic | v3 | `e2c6053` |
-| 4 | 100 | None | balanced | ✅ | 0.9988 | **0.8296** | 0.8571 | **real Kaggle** | v4 | `avg_prec=0.83` |
+- **Machine Learning**: Scikit-Learn (Random Forest), imbalanced-learn (SMOTE), SHAP
+- **MLOps & Monitoring**: MLflow, Evidently AI
+- **Serving**: FastAPI, Uvicorn, Docker
+- **CI/CD**: GitHub Actions
+- **Cloud Infrastructure (AWS)**: Amazon S3, Amazon ECR, Amazon ECS (Fargate), AWS CloudFormation, AWS IAM
 
-> **Note**: Runs 1–3 were on a 50k-row synthetic dataset (used to validate the MLflow logging loop).
-> Run 4 uses the full 284,807-row Kaggle dataset — `avg_precision 0.83` is the production metric.
+## 📊 Dataset & Model Performance
 
-## Drift Threshold Justification
+Trained on the [Kaggle Credit Card Fraud Detection](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud) dataset (284,807 transactions, 492 frauds).
 
-We use a **DataDriftPreset** via Evidently with a drift share threshold of `0.25` (25%).
-- **Why 25%?** The dataset contains 30 features (Time, Amount, V1-V28). A drift share of 0.25 means at least 7-8 features have significantly shifted in their statistical distributions (using default statistical tests like Kolmogorov-Smirnov).
-- Fraud detection models are highly sensitive to shifts in the PCA-transformed `V` features. If >25% of features drift, the underlying transaction behavior has fundamentally changed, strongly indicating that the model's learned decision boundaries may no longer be reliable and a retrain is required.
-- **Verified end-to-end**: drift detected locally (share=0.50) → `repository_dispatch` → GitHub Actions ML Pipeline → model retrained with `trigger=drift_retrain, drift_score=0.5` logged as MLflow tags (runs #10, #12).
+| Model | n_estimators | max_depth | class_weight | SMOTE | ROC-AUC | Avg Precision | F1 Score |
+|---|---|---|---|---|---|---|---|
+| Random Forest | 100 | None | balanced | ✅ | **0.9988** | **0.8296** | **0.8571** |
 
-## Quickstart
+> **Drift Threshold Justification**: A **DataDriftPreset** via Evidently is configured with a drift share threshold of `0.25` (25%). Fraud detection models are highly sensitive to shifts in PCA-transformed features. If >25% of features drift, the underlying transaction behavior has fundamentally changed, strongly indicating the model's learned decision boundaries are outdated and a retrain is required.
 
-### Local Setup
+## 🚀 Quickstart
+
+### 1. Local Setup
 ```bash
 # Install dependencies
 pip install -e ".[dev,serving,monitoring,dashboard]"
 
-# Download dataset
+# Download dataset (requires KAGGLE_USERNAME and KAGGLE_KEY)
 python -m src.data.download
 
-# Run experiments
+# Run training pipeline locally
 python -m src.training.train
 
-# Set production model alias
+# Set production model alias and push artifacts
 python scripts/promote_model.py
 
-# Launch MLflow UI
+# Launch MLflow UI to view experiments
 mlflow ui --backend-store-uri sqlite:///mlruns.db
 ```
 
-### Serving API (Docker)
+### 2. Testing Drift Detection
 ```bash
-# Build the image
-docker build -t fraud-api:latest .
-
-# Run the API, mounting the model registry
-docker run -p 8000:8000 \
-  -v $(pwd)/mlruns:/app/mlruns \
-  -v $(pwd)/mlruns.db:/app/mlruns.db \
-  fraud-api:latest
-
-# Check health
-curl http://localhost:8000/health
-```
-
-### Dashboard
-```bash
-# Launch the Streamlit dashboard
-streamlit run src/dashboard/app.py
-```
-
-### Drift Detection
-```bash
-# Simulate drift
+# Simulate data drift
 python -m src.monitoring.simulate_drift 200 amount_shift
 
 # Run the drift detector
 python -m src.monitoring.drift_detector
 ```
 
-## Project Phases
+### 3. Dashboard
+```bash
+# Launch the Streamlit dashboard
+streamlit run src/dashboard/app.py
+```
 
-- **Phase 1** ✅ Data, features, training, MLflow experiments
-- **Phase 2** ✅ FastAPI serving + Docker
-- **Phase 3** ✅ GitHub Actions CI/CD
-- **Phase 4** ✅ Evidently drift detection + retrain loop
-- **Phase 5** ✅ Streamlit dashboard + README polish
+### 4. AWS Deployment
+The pipeline is fully automated via GitHub Actions, but relies on the following AWS prerequisites:
+1. An S3 Bucket for artifacts (e.g., `s3://your-mlflow-artifacts-bucket`)
+2. An ECR Repository (e.g., `fraud-detection`)
+3. GitHub Secrets configured (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `KAGGLE_JSON`, `GH_PAT`)
+
+Once the CI/CD pipeline runs and populates S3 and ECR, deploy the infrastructure:
+```bash
+# Deploy the ECS Fargate cluster via CloudFormation
+aws cloudformation create-stack \
+  --stack-name fraud-ecs-stack \
+  --template-body file://infra/ecs_fargate.yaml \
+  --capabilities CAPABILITY_NAMED_IAM
+```
+
+## 📈 Project Phases
+
+- **Phase 1** ✅ Data Pipeline & Experiment Tracking (MLflow)
+- **Phase 2** ✅ API Development (FastAPI + Docker)
+- **Phase 3** ✅ CI/CD Pipeline (GitHub Actions)
+- **Phase 4** ✅ Cloud Deployment (AWS ECS Fargate + S3 Artifacts + CloudFormation)
+- **Phase 5** ✅ Continuous Training & Drift Detection (Evidently)
+
+---
+*Developed as a comprehensive reference architecture for production-grade Machine Learning Systems.*
